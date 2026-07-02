@@ -1126,15 +1126,14 @@
         }
 
         // ==========================================
-        // PWA (PROGRESSIVE WEB APP) SETUP
+        // PWA (PROGRESSIVE WEB APP) SETUP (UPDATE TERBARU)
         // ==========================================
         function setupPWA() {
-            // 1. Generate Manifest Dinamis (Bypass batasan file Blogger)
-            const currentUrl = window.location.pathname; // Menggunakan pathname agar stabil
+            // 1. Generate Manifest
             const manifest = {
                 "name": "EduPOS Digital", "short_name": "EduPOS",
                 "description": "Sistem Kasir & Kelola Stok Berbasis Barcode",
-                "start_url": currentUrl, "display": "standalone",
+                "start_url": window.location.pathname, "display": "standalone",
                 "background_color": "#0f172a", "theme_color": "#1e3a8a",
                 "icons": [
                     { "src": "https://via.placeholder.com/192x192.png?text=POS&bg=1e3a8a&textColor=fff", "sizes": "192x192", "type": "image/png" },
@@ -1143,64 +1142,66 @@
             };
             
             const stringManifest = JSON.stringify(manifest);
-            const blob = new Blob([stringManifest], {type: 'application/json'});
-            const manifestURL = URL.createObjectURL(blob);
-            document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+            const manifestBlob = new Blob([stringManifest], {type: 'application/json'});
+            document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${URL.createObjectURL(manifestBlob)}">`);
+
+            // 2. Injeksi Service Worker Virtual (Wajib bagi Chrome Android untuk memvalidasi PWA)
+            if ('serviceWorker' in navigator) {
+                const swCode = "self.addEventListener('fetch', (event) => {});";
+                const swBlob = new Blob([swCode], {type: 'application/javascript'});
+                navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(err => console.log('SW Virtual terblokir browser, beralih ke manual.'));
+            }
 
             let deferredPrompt;
             const installBtn = document.getElementById('btn-install-pwa');
 
-            // Deteksi jenis perangkat
-            const isIos = () => /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
-            // Deteksi apakah aplikasi sudah dalam mode Standalone (Sudah di-install)
-            const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-
-            // Jika belum di-install, selalu tampilkan tombol Install
-            if (!isStandalone() && installBtn) {
-                installBtn.classList.remove('hidden');
+            // 3. Cek Status: Apakah aplikasi sudah diinstal?
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+            if (!isStandalone && installBtn) {
+                installBtn.classList.remove('hidden'); // Selalu tampilkan tombol jika belum diinstal
             }
 
-            // Menangkap event instalasi bawaan browser (Hanya aktif di Android Chrome/Edge)
+            // 4. Tangkap event instalasi native Chrome
             window.addEventListener('beforeinstallprompt', (e) => {
                 e.preventDefault();
-                deferredPrompt = e; // Simpan event untuk dipicu nanti oleh tombol
+                deferredPrompt = e;
             });
 
-            // Logika Klik Tombol Install Dinamis
+            // 5. Logika Klik Tombol Install
             if(installBtn) {
                 installBtn.addEventListener('click', async () => {
                     if (deferredPrompt) {
-                        // Jika ada event bawaan, tampilkan prompt instalasi sistem
+                        // Jika didukung otomatis (Pop-up sistem akan muncul)
                         deferredPrompt.prompt();
                         const { outcome } = await deferredPrompt.userChoice;
-                        if (outcome === 'accepted') {
-                            installBtn.classList.add('hidden');
-                        }
+                        if (outcome === 'accepted') installBtn.classList.add('hidden');
                         deferredPrompt = null;
-                    } else if (isIos()) {
-                        // Jika perangkat iOS / iPhone (Apple memblokir prompt otomatis)
-                        Swal.fire({
-                            title: 'Install di iPhone/iPad',
-                            html: 'Ketuk ikon <b>Bagikan (Share)</b> <i class="fas fa-share-square mx-1"></i> di menu bawah browser Safari Anda, lalu pilih <br><b>"Tambah ke Layar Utama"</b>.',
-                            icon: 'info',
-                            confirmButtonColor: '#3085d6'
-                        });
                     } else {
-                        // Fallback untuk Android jika event belum siap
-                        Swal.fire({
-                            title: 'Install Aplikasi',
-                            html: 'Ketuk ikon <b>Titik Tiga (⋮)</b> di pojok kanan atas browser Anda, lalu pilih <br><b>"Tambahkan ke Layar Utama"</b> atau <b>"Instal Aplikasi"</b>.',
-                            icon: 'info',
-                            confirmButtonColor: '#3085d6'
-                        });
+                        // JIKA TERBLOKIR (iOS / Pembatasan Blogger), tampilkan panduan manual yang sangat jelas
+                        const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+                        if (isIos) {
+                            Swal.fire({
+                                title: 'Install di iPhone/iPad',
+                                html: 'Sistem Apple membatasi instalasi otomatis.<br><br><b>Cara Manual:</b><br>Ketuk ikon <b>Bagikan (Share)</b> <i class="fas fa-share-square mx-1 text-blue-500"></i> di menu bawah browser Safari Anda, lalu pilih menu<br><b>"Tambah ke Layar Utama" (Add to Home Screen)</b>.',
+                                icon: 'info',
+                                confirmButtonColor: '#3085d6'
+                            });
+                        } else {
+                            Swal.fire({
+                                title: 'Install Aplikasi',
+                                html: 'Browser Anda memblokir pop-up otomatis.<br><br><b>Cara Manual (Hanya 3 Detik):</b><br>1. Ketuk ikon <b>Titik Tiga (⋮)</b> di pojok kanan atas browser.<br>2. Pilih menu <b>"Tambahkan ke Layar Utama"</b> atau <b>"Instal Aplikasi"</b>.',
+                                icon: 'info',
+                                confirmButtonColor: '#3085d6'
+                            });
+                        }
                     }
                 });
             }
 
-            // Jika berhasil diinstal, sembunyikan tombol
+            // 6. Jika sukses terinstal
             window.addEventListener('appinstalled', () => {
                 if(installBtn) installBtn.classList.add('hidden');
-                Swal.fire('Terinstal', 'EduPOS berhasil ditambahkan ke Layar Utama Anda!', 'success');
+                Swal.fire('Berhasil Terinstal', 'EduPOS telah ditambahkan ke Layar Utama HP Anda!', 'success');
             });
         }
         setupPWA();
