@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#2563eb">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="EduPOS">
+    <title>Sistem Kasir POS - Scan Barcode</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Html5Qrcode (Scanner) -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+    <style>
+        /* Reset Blogger Elements */
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Fullscreen Wrapper to cover Blogger */
+        #pos-app-wrapper {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: #f3f4f6; z-index: 9999999; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* Thermal Print Styles */
+        @media print {
+            body * { visibility: hidden; }
+            #pos-app-wrapper { display: none !important; }
+            #print-area, #print-area * { visibility: visible; }
+            #print-area {
+                position: absolute; left: 0; top: 0; width: 58mm; /* Thermal paper width */
+                font-family: monospace; font-size: 12px; color: black; background: white; padding: 0; margin: 0;
+            }
+            .no-print { display: none !important; }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .hide-element { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- THUMBNAIL BLOGGER (TERSEMBUNYI) -->
+    <div style="display:none;">
+        <img src="https://via.placeholder.com/1200x630.png?text=Aplikasi+Kasir+POS+Barcode" alt="Thumbnail POS">
+    </div>
+
+    <!-- AREA CETAK STRUK -->
+    <div id="print-area" class="hide-element"></div>
+
+    <!-- MAIN APP WRAPPER -->
+    <div id="pos-app-wrapper">
+        
+        <!-- LOGIN SCREEN -->
+        <div id="screen-login" class="flex items-center justify-center h-full bg-slate-800">
+            <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md mx-4">
+                <div class="text-center mb-8">
+                    <i class="fas fa-store text-5xl text-blue-600 mb-3"></i>
+                    <h1 class="text-2xl font-bold text-gray-800">EduPOS Digital</h1>
+                    <p class="text-gray-500 text-sm">Sistem Kasir & Kelola Stok</p>
+                </div>
+                <form id="form-login" onsubmit="handleLogin(event)">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Username</label>
+                        <input type="text" id="login-username" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required placeholder="Masukkan username">
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Password</label>
+                        <input type="password" id="login-password" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required placeholder="Masukkan password">
+                    </div>
+                    <button type="submit" id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-md">
+                        Masuk
+                    </button>
+                    <div id="login-loading" class="hidden text-center mt-3 text-blue-600 font-semibold">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Memproses...
+                    </div>
+                </form>
+                <div class="mt-6 p-4 bg-blue-50 rounded-lg text-xs text-gray-600">
+                    <strong>Mode Preview Dummy Login:</strong><br>
+                    Admin: admin / edudigital<br>
+                    Kasir: peserta / edudigital
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN DASHBOARD (HIDDEN INITIALLY) -->
+        <div id="screen-main" class="flex h-full w-full hide-element bg-gray-100">
+            
+            <!-- SIDEBAR -->
+            <div class="w-64 bg-slate-800 text-white flex flex-col hidden md:flex transition-all z-20" id="sidebar">
+                <div class="p-5 border-b border-slate-700 flex items-center justify-between">
+                    <div>
+                        <h2 class="font-bold text-lg"><i class="fas fa-store text-blue-400 mr-2"></i> EduPOS</h2>
+                        <p class="text-xs text-gray-400" id="user-info-display">Admin</p>
+                    </div>
+                    <button class="md:hidden text-gray-400 hover:text-white" onclick="toggleSidebar()"><i class="fas fa-times"></i></button>
+                </div>
+                
+                <nav class="flex-1 overflow-y-auto py-4">
+                    <!-- Admin Menus -->
+                    <div id="menu-admin" class="hide-element">
+                        <p class="px-5 text-xs font-semibold text-slate-500 uppercase mb-2">Menu Admin</p>
+                        <a href="#" onclick="switchMenu('dashboard')" class="nav-link block px-5 py-3 hover:bg-slate-700 transition" data-menu="dashboard"><i class="fas fa-chart-line w-6"></i> Dashboard</a>
+                        <a href="#" onclick="switchMenu('produk')" class="nav-link block px-5 py-3 hover:bg-slate-700 transition" data-menu="produk"><i class="fas fa-box w-6"></i> Kelola Stok</a>
+                        <a href="#" onclick="switchMenu('laporan')" class="nav-link block px-5 py-3 hover:bg-slate-700 transition" data-menu="laporan"><i class="fas fa-file-invoice-dollar w-6"></i> Laporan Keuangan</a>
+                        <a href="#" onclick="switchMenu('pengguna')" class="nav-link block px-5 py-3 hover:bg-slate-700 transition" data-menu="pengguna"><i class="fas fa-users w-6"></i> Kelola Pengguna</a>
+                    </div>
+                    
+                    <!-- Kasir Menus -->
+                    <div id="menu-kasir" class="mt-4">
+                        <p class="px-5 text-xs font-semibold text-slate-500 uppercase mb-2">Menu Kasir</p>
+                        <a href="#" onclick="switchMenu('pos')" class="nav-link block px-5 py-3 hover:bg-slate-700 transition" data-menu="pos"><i class="fas fa-cash-register w-6"></i> Scanner POS</a>
+                        <a href="#" onclick="switchMenu('riwayat')" class="nav-link block px-5 py-3 hover:bg-slate-700 transition" data-menu="riwayat"><i class="fas fa-history w-6"></i> Riwayat Transaksi</a>
+                    </div>
+                </nav>
+
+                <div class="p-4 border-t border-slate-700">
+                    <button id="btn-install-pwa" class="w-full flex items-center justify-center px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-sm transition mb-3 hidden"><i class="fas fa-download mr-2"></i> Install Aplikasi</button>
+                    <button onclick="handleLogout()" class="w-full flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm transition"><i class="fas fa-sign-out-alt mr-2"></i> Keluar</button>
+                </div>
+            </div>
+
+            <!-- CONTENT AREA -->
+            <div class="flex-1 flex flex-col min-w-0">
+                <!-- TOPBAR -->
+                <header class="bg-white shadow-sm flex items-center justify-between p-4 z-10">
+                    <button class="md:hidden text-gray-600 text-xl" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2 class="text-xl font-semibold text-gray-800" id="topbar-title">Dashboard</h2>
+                    <div class="flex items-center text-sm font-medium text-gray-600 bg-gray-100 py-1 px-3 rounded-full">
+                        <i class="fas fa-clock mr-2 text-blue-500"></i> <span id="clock-display">00:00:00</span>
+                    </div>
+                </header>
+
+                <!-- PAGES -->
+                <main class="flex-1 overflow-y-auto p-4 md:p-6" id="pages-container">
+                    
+                    <!-- PAGE: DASHBOARD -->
+                    <div id="page-dashboard" class="page-content hide-element">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                <div><p class="text-sm text-gray-500 mb-1">Total Pendapatan Hari Ini</p><h3 class="text-2xl font-bold text-gray-800" id="dash-pendapatan">Rp 0</h3></div>
+                                <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xl"><i class="fas fa-wallet"></i></div>
+                            </div>
+                            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                <div><p class="text-sm text-gray-500 mb-1">Total Laba Bersih Hari Ini</p><h3 class="text-2xl font-bold text-green-600" id="dash-laba">Rp 0</h3></div>
+                                <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xl"><i class="fas fa-chart-pie"></i></div>
+                            </div>
+                            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                <div><p class="text-sm text-gray-500 mb-1">Jumlah Transaksi</p><h3 class="text-2xl font-bold text-purple-600" id="dash-transaksi">0</h3></div>
+                                <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 text-xl"><i class="fas fa-receipt"></i></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PAGE: PRODUK (STOK) -->
+                    <div id="page-produk" class="page-content hide-element">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
+                            <div class="p-4 border-b flex justify-between items-center">
+                                <div class="flex items-center bg-gray-100 rounded-lg px-3 py-2 w-64">
+                                    <i class="fas fa-search text-gray-400 mr-2"></i>
+                                    <input type="text" id="search-produk" placeholder="Cari barcode/nama..." class="bg-transparent border-none outline-none w-full text-sm" onkeyup="renderProduk()">
+                                </div>
+                                <button onclick="openModalProduk()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"><i class="fas fa-plus mr-1"></i> Tambah Produk</button>
+                            </div>
+                            <div class="overflow-x-auto flex-1">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50 text-gray-600 text-sm">
+                                            <th class="p-3 border-b">Barcode</th>
+                                            <th class="p-3 border-b">Nama Produk</th>
+                                            <th class="p-3 border-b">Harga Beli</th>
+                                            <th class="p-3 border-b">Harga Jual</th>
+                                            <th class="p-3 border-b">Stok</th>
+                                            <th class="p-3 border-b text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-produk-body" class="text-sm text-gray-700">
+                                        <!-- Rendered via JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PAGE: POS (KASIR) -->
+                    <div id="page-pos" class="page-content hide-element h-full flex flex-col lg:flex-row gap-4">
+                        <!-- Left Panel: Scanner & Input -->
+                        <div class="lg:w-1/3 flex flex-col gap-4">
+                            <!-- Scanner Box -->
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                                <h3 class="font-semibold text-gray-700 mb-3"><i class="fas fa-camera text-blue-500 mr-2"></i> Scan Barcode</h3>
+                                <div id="reader" class="w-full bg-black rounded-lg overflow-hidden min-h-[200px]"></div>
+                                <div class="flex gap-2 mt-3">
+                                    <button onclick="startScanner()" id="btn-start-scan" class="flex-1 bg-green-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-600"><i class="fas fa-play mr-1"></i> Mulai Scan</button>
+                                    <button onclick="stopScanner()" id="btn-stop-scan" class="flex-1 bg-red-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-600 hidden"><i class="fas fa-stop mr-1"></i> Hentikan</button>
+                                </div>
+                            </div>
+                            <!-- Manual Input Box -->
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                                <h3 class="font-semibold text-gray-700 mb-3"><i class="fas fa-keyboard text-gray-500 mr-2"></i> Input Manual</h3>
+                                <form onsubmit="handleManualBarcode(event)" class="flex gap-2">
+                                    <input type="text" id="manual-barcode" class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-blue-500" placeholder="Ketik barcode..." required>
+                                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg"><i class="fas fa-search"></i></button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Right Panel: Cart & Payment -->
+                        <div class="lg:w-2/3 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
+                            <div class="p-4 border-b bg-gray-50 rounded-t-xl">
+                                <h3 class="font-bold text-gray-700"><i class="fas fa-shopping-cart text-blue-600 mr-2"></i> Keranjang Belanja</h3>
+                            </div>
+                            <div class="flex-1 overflow-y-auto p-4">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="text-xs text-gray-500 uppercase border-b">
+                                            <th class="pb-2">Produk</th>
+                                            <th class="pb-2 text-center">Qty</th>
+                                            <th class="pb-2 text-right">Subtotal</th>
+                                            <th class="pb-2 text-center w-10"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cart-body">
+                                        <!-- Cart Items Here -->
+                                        <tr><td colspan="4" class="text-center py-10 text-gray-400 text-sm">Keranjang kosong. Mulai scan produk.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- Payment Section -->
+                            <div class="p-4 border-t bg-gray-50 rounded-b-xl">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="text-gray-600">Total Belanja:</span>
+                                    <span class="text-2xl font-bold text-blue-700" id="cart-total">Rp 0</span>
+                                </div>
+                                <div class="flex justify-between items-center mb-4">
+                                    <span class="text-gray-600">Bayar (Rp):</span>
+                                    <input type="number" id="input-bayar" class="border rounded-lg px-3 py-2 text-right text-lg font-bold w-40 focus:outline-blue-500" placeholder="0" onkeyup="kalkulasiKembalian()">
+                                </div>
+                                <div class="flex justify-between items-center mb-4 text-red-600">
+                                    <span class="font-medium">Kembalian:</span>
+                                    <span class="text-xl font-bold" id="cart-kembalian">Rp 0</span>
+                                </div>
+                                <button onclick="prosesTransaksi()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg text-lg shadow-md flex items-center justify-center transition">
+                                    <i class="fas fa-print mr-2"></i> Proses & Cetak Struk
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PAGE: LAPORAN & RIWAYAT -->
+                    <div id="page-laporan" class="page-content hide-element">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+                            <div class="p-4 border-b flex justify-between items-center">
+                                <h3 class="font-bold text-gray-700">Data Transaksi</h3>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50 text-gray-600 text-sm">
+                                            <th class="p-3 border-b">ID Transaksi</th>
+                                            <th class="p-3 border-b">Waktu</th>
+                                            <th class="p-3 border-b">Kasir</th>
+                                            <th class="p-3 border-b text-right">Total Belanja</th>
+                                            <th class="p-3 border-b text-right admin-only">Laba Kotor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-laporan-body" class="text-sm text-gray-700">
+                                        <!-- Transaksi Data -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PAGE: PENGGUNA -->
+                    <div id="page-pengguna" class="page-content hide-element">
+                         <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+                            <div class="p-4 border-b flex justify-between items-center">
+                                <h3 class="font-bold text-gray-700">Kelola Pengguna</h3>
+                                <button onclick="openModalUser()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium"><i class="fas fa-plus mr-1"></i> Tambah User</button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50 text-gray-600 text-sm">
+                                            <th class="p-3 border-b">Username</th>
+                                            <th class="p-3 border-b">Nama Lengkap</th>
+                                            <th class="p-3 border-b">Role</th>
+                                            <th class="p-3 border-b text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-user-body" class="text-sm text-gray-700">
+                                        <!-- Users Data -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PRODUK -->
+    <div id="modal-produk" class="fixed inset-0 bg-black bg-opacity-50 z-[99999999] flex items-center justify-center hide-element">
+        <div class="bg-white w-full max-w-md rounded-xl shadow-2xl p-6 mx-4">
+            <h3 class="text-xl font-bold mb-4" id="modal-produk-title">Tambah Produk</h3>
+            <form id="form-produk" onsubmit="saveProduk(event)">
+                <input type="hidden" id="prod-action" value="add">
+                <div class="mb-3">
+                    <label class="block text-sm text-gray-600 mb-1">Barcode</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="prod-barcode" class="w-full border rounded p-2 text-sm flex-1" required placeholder="Scan atau ketik...">
+                        <button type="button" onclick="toggleScannerProduk()" id="btn-scan-produk" class="bg-blue-100 text-blue-700 px-3 py-2 rounded border border-blue-200 hover:bg-blue-200 transition" title="Scan Barcode">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                    <!-- Area Scanner untuk Produk -->
+                    <div id="reader-produk" class="w-full bg-black rounded-lg overflow-hidden mt-2 hidden min-h-[150px]"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm text-gray-600 mb-1">Nama Produk</label>
+                    <input type="text" id="prod-nama" class="w-full border rounded p-2 text-sm" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">Harga Beli (Modal)</label>
+                        <input type="number" id="prod-beli" class="w-full border rounded p-2 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">Harga Jual</label>
+                        <input type="number" id="prod-jual" class="w-full border rounded p-2 text-sm" required>
+                    </div>
+                </div>
+                <div class="mb-5">
+                    <label class="block text-sm text-gray-600 mb-1">Stok Awal</label>
+                    <input type="number" id="prod-stok" class="w-full border rounded p-2 text-sm" required>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeModal('modal-produk')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL USER -->
+    <div id="modal-user" class="fixed inset-0 bg-black bg-opacity-50 z-[99999999] flex items-center justify-center hide-element">
+        <div class="bg-white w-full max-w-md rounded-xl shadow-2xl p-6 mx-4">
+            <h3 class="text-xl font-bold mb-4">Tambah Pengguna</h3>
+            <form id="form-user" onsubmit="saveUser(event)">
+                <div class="mb-3">
+                    <label class="block text-sm text-gray-600 mb-1">Username</label>
+                    <input type="text" id="usr-username" class="w-full border rounded p-2 text-sm" required>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm text-gray-600 mb-1">Password</label>
+                    <input type="password" id="usr-password" class="w-full border rounded p-2 text-sm" required>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm text-gray-600 mb-1">Nama Lengkap</label>
+                    <input type="text" id="usr-nama" class="w-full border rounded p-2 text-sm" required>
+                </div>
+                <div class="mb-5">
+                    <label class="block text-sm text-gray-600 mb-1">Role</label>
+                    <select id="usr-role" class="w-full border rounded p-2 text-sm" required>
+                        <option value="Kasir">Kasir</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeModal('modal-user')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- JAVASCRIPT LOGIC -->
+    <!-- ============================================== -->
+    <script>
+        // ==========================================
+        // KONFIGURASI APLIKASI
+        // UBAH IS_PREVIEW KE false JIKA AKAN DI-DEPLOY KE BLOGGER
+        // ==========================================
+        const IS_PREVIEW = false; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzFGEPyyhdR-j_q46I7NSSuc5sOzs9a8O7s9K_r8ZwDjwynr_kM8IMlO72Z0PYNn8wHRA/exec";
+
+        // GLOBAL STATES
+        let currentUser = null; // {username, role, nama}
+        let dataProduk = [];
+        let dataTransaksi = [];
+        let dataUsers = [];
+        let cart = [];
+        let html5QrCode = null; // Scanner Kasir
+        let html5QrCodeProduk = null; // Scanner Form Produk
+
+        // DUMMY DATA UNTUK PREVIEW CANVAS
+        const dummyUsers = [
+            {username: 'admin', password: 'edudigital', role: 'Admin', nama: 'Administrator'},
+            {username: 'peserta', password: 'edudigital', role: 'Kasir', nama: 'Kasir Utama'}
+        ];
+        const dummyProduk = [
+            {Barcode: '89999990001', Nama_Produk: 'Indomie Goreng', Harga_Beli: 2500, Harga_Jual: 3500, Stok: 150},
+            {Barcode: '89999990002', Nama_Produk: 'Aqua Botol 600ml', Harga_Beli: 2000, Harga_Jual: 3500, Stok: 100},
+            {Barcode: '89999990003', Nama_Produk: 'Roti Sari Roti', Harga_Beli: 4500, Harga_Jual: 6000, Stok: 20}
+        ];
+        const dummyTransaksi = [
+            {ID_Transaksi: 'TRX-1704202401', Tanggal_Waktu: '2024-04-17 10:00', Kasir: 'Kasir Utama', Total_Belanja: 10500, Nominal_Bayar: 20000, Kembalian: 9500, Laba_Kotor: 3500}
+        ];
+
+        // INIT CLOCK
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock-display').innerText = now.toLocaleTimeString('id-ID');
+        }, 1000);
+
+        // HELPER API CALL
+        async function fetchAPI(action, payload = {}) {
+            if (IS_PREVIEW) return mockAPI(action, payload);
+            
+            try {
+                Swal.showLoading();
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'text/plain;charset=utf-8'}, // Avoid CORS preflight
+                    body: JSON.stringify({ action: action, payload: payload })
+                });
+                const resData = await response.json();
+                Swal.close();
+                if(resData.status !== 'success') throw new Error(resData.message);
+                return resData;
+            } catch (error) {
+                Swal.fire('Error', error.message || 'Koneksi ke server gagal', 'error');
+                throw error;
+            }
+        }
+
+        // MOCK API LOGIC (FOR PREVIEW)
+        async function mockAPI(action, payload) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    let result = { status: 'success', data: null };
+                    switch (action) {
+                        case 'login':
+                            const u = dummyUsers.find(x => x.username === payload.username && x.password === payload.password);
+                            if(u) result.data = { username: u.username, role: u.role, nama: u.nama };
+                            else result = { status: 'error', message: 'Username/Password salah!' };
+                            break;
+                        case 'getData':
+                            result.data = { produk: dataProduk.length ? dataProduk : dummyProduk, transaksi: dummyTransaksi, users: dummyUsers };
+                            dataProduk = result.data.produk;
+                            break;
+                        case 'saveProduk':
+                            if(payload.isEdit){
+                                let idx = dataProduk.findIndex(p => p.Barcode === payload.Barcode);
+                                if(idx > -1) dataProduk[idx] = payload;
+                            } else {
+                                dataProduk.push(payload);
+                            }
+                            break;
+                        case 'processTransaction':
+                            payload.ID_Transaksi = 'TRX-' + Date.now();
+                            payload.Tanggal_Waktu = new Date().toLocaleString('id-ID');
+                            dummyTransaksi.unshift(payload);
+                            // Reduce stock
+                            payload.Detail.forEach(item => {
+                                let p = dataProduk.find(x => x.Barcode === item.Barcode);
+                                if(p) p.Stok -= item.Qty;
+                            });
+                            result.data = payload.ID_Transaksi;
+                            break;
+                    }
+                    resolve(result);
+                }, 500);
+            });
+        }
+
+        // FORMAT RUPIAH
+        const rp = (num) => 'Rp ' + parseInt(num).toLocaleString('id-ID');
+
+        // ==========================================
+        // AUTHENTICATION & ROUTING
+        // ==========================================
+        async function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('login-username').value;
+            const p = document.getElementById('login-password').value;
+            document.getElementById('btn-login').classList.add('hidden');
+            document.getElementById('login-loading').classList.remove('hidden');
+
+            try {
+                const res = await fetchAPI('login', {username: u, password: p});
+                currentUser = res.data;
+                initApp();
+            } catch (err) {
+                document.getElementById('btn-login').classList.remove('hidden');
+                document.getElementById('login-loading').classList.add('hidden');
+            }
+        }
+
+        function handleLogout() {
+            Swal.fire({
+                title: 'Keluar?', text: "Sesi kasir akan diakhiri.", icon: 'warning',
+                showCancelButton: true, confirmButtonText: 'Ya, Keluar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    currentUser = null;
+                    stopScanner();
+                    document.getElementById('screen-main').classList.add('hide-element');
+                    document.getElementById('screen-login').classList.remove('hide-element');
+                    document.getElementById('login-password').value = '';
+                    document.getElementById('btn-login').classList.remove('hidden');
+                    document.getElementById('login-loading').classList.add('hidden');
+                }
+            });
+        }
+
+        async function initApp() {
+            // UI Setup
+            document.getElementById('screen-login').classList.add('hide-element');
+            document.getElementById('screen-main').classList.remove('hide-element');
+            document.getElementById('user-info-display').innerText = currentUser.nama + ' (' + currentUser.role + ')';
+
+            // Menu Authorization
+            if(currentUser.role === 'Admin') {
+                document.getElementById('menu-admin').classList.remove('hide-element');
+                document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hide-element'));
+                switchMenu('dashboard');
+            } else {
+                document.getElementById('menu-admin').classList.add('hide-element');
+                document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hide-element'));
+                switchMenu('pos');
+            }
+
+            // Load Data
+            loadDataAll();
+        }
+
+        function switchMenu(menuName) {
+            // Hide all pages
+            document.querySelectorAll('.page-content').forEach(el => el.classList.add('hide-element'));
+            document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('bg-blue-600'));
+            
+            // Show target
+            document.getElementById('page-' + (menuName === 'riwayat' ? 'laporan' : menuName)).classList.remove('hide-element');
+            document.querySelector(`[data-menu="${menuName}"]`).classList.add('bg-blue-600');
+            
+            // Title
+            const titles = {
+                dashboard: 'Dashboard Admin', produk: 'Manajemen Stok Produk', 
+                pos: 'Kasir / Point of Sale', laporan: 'Laporan Keuangan', 
+                riwayat: 'Riwayat Transaksi', pengguna: 'Kelola Pengguna'
+            };
+            document.getElementById('topbar-title').innerText = titles[menuName];
+
+            // Handle Scanner State
+            if(menuName === 'pos') {
+                // Prepare POS
+                document.getElementById('manual-barcode').focus();
+            } else {
+                stopScanner();
+            }
+
+            // Auto close sidebar on mobile
+            if(window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('hidden');
+            }
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('hidden');
+        }
+
+        // ==========================================
+        // DATA MANAGEMENT (CRUD)
+        // ==========================================
+        async function loadDataAll() {
+            try {
+                const res = await fetchAPI('getData');
+                dataProduk = res.data.produk || [];
+                dataTransaksi = res.data.transaksi || [];
+                dataUsers = res.data.users || [];
+                
+                renderProduk();
+                renderLaporan();
+                renderDashboard();
+                renderUsers();
+            } catch (err) {}
+        }
+
+        // --- MODULE: PRODUK ---
+        function renderProduk() {
+            const tbody = document.getElementById('table-produk-body');
+            const kw = document.getElementById('search-produk').value.toLowerCase();
+            tbody.innerHTML = '';
+            
+            let filtered = dataProduk.filter(p => p.Barcode.toLowerCase().includes(kw) || p.Nama_Produk.toLowerCase().includes(kw));
+            
+            if(filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">Tidak ada data produk.</td></tr>`;
+                return;
+            }
+
+            filtered.forEach(p => {
+                const isLowStock = p.Stok < 10;
+                tbody.innerHTML += `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-3 font-mono">${p.Barcode}</td>
+                        <td class="p-3">${p.Nama_Produk}</td>
+                        <td class="p-3 text-red-600">${rp(p.Harga_Beli)}</td>
+                        <td class="p-3 text-green-600 font-semibold">${rp(p.Harga_Jual)}</td>
+                        <td class="p-3 font-bold ${isLowStock ? 'text-red-500' : 'text-gray-700'}">${p.Stok}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="editProduk('${p.Barcode}')" class="text-blue-500 hover:text-blue-700 mr-2"><i class="fas fa-edit"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function openModalProduk() {
+            document.getElementById('form-produk').reset();
+            document.getElementById('prod-action').value = 'add';
+            document.getElementById('prod-barcode').readOnly = false;
+            document.getElementById('modal-produk-title').innerText = 'Tambah Produk';
+            document.getElementById('modal-produk').classList.remove('hide-element');
+            stopScannerProduk(); // Pastikan scanner mati saat dibuka
+        }
+
+        function editProduk(barcode) {
+            const p = dataProduk.find(x => x.Barcode === barcode);
+            if(!p) return;
+            document.getElementById('prod-action').value = 'edit';
+            document.getElementById('prod-barcode').value = p.Barcode;
+            document.getElementById('prod-barcode').readOnly = true;
+            document.getElementById('prod-nama').value = p.Nama_Produk;
+            document.getElementById('prod-beli').value = p.Harga_Beli;
+            document.getElementById('prod-jual').value = p.Harga_Jual;
+            document.getElementById('prod-stok').value = p.Stok;
+            document.getElementById('modal-produk-title').innerText = 'Edit Produk';
+            document.getElementById('modal-produk').classList.remove('hide-element');
+            stopScannerProduk(); // Matikan scanner jika terbuka
+        }
+
+        async function saveProduk(e) {
+            e.preventDefault();
+            const payload = {
+                Barcode: document.getElementById('prod-barcode').value,
+                Nama_Produk: document.getElementById('prod-nama').value,
+                Harga_Beli: parseInt(document.getElementById('prod-beli').value),
+                Harga_Jual: parseInt(document.getElementById('prod-jual').value),
+                Stok: parseInt(document.getElementById('prod-stok').value),
+                isEdit: document.getElementById('prod-action').value === 'edit'
+            };
+
+            await fetchAPI('saveProduk', payload);
+            closeModal('modal-produk');
+            Swal.fire('Sukses', 'Data produk berhasil disimpan', 'success');
+            loadDataAll();
+        }
+
+        // --- MODULE: SCANNER PRODUK (ADMIN) ---
+        function toggleScannerProduk() {
+            const readerDiv = document.getElementById('reader-produk');
+            const btn = document.getElementById('btn-scan-produk');
+
+            if (readerDiv.classList.contains('hidden')) {
+                // Mulai Scanner
+                readerDiv.classList.remove('hidden');
+                btn.classList.replace('bg-blue-100', 'bg-red-100');
+                btn.classList.replace('text-blue-700', 'text-red-700');
+                btn.classList.replace('border-blue-200', 'border-red-200');
+                btn.innerHTML = '<i class="fas fa-times"></i>';
+
+                if (!html5QrCodeProduk) {
+                    html5QrCodeProduk = new Html5Qrcode("reader-produk");
+                }
+
+                const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+                html5QrCodeProduk.start({ facingMode: "environment" }, config, (decodedText) => {
+                    // Berhasil scan
+                    playBeep();
+                    document.getElementById('prod-barcode').value = decodedText;
+                    stopScannerProduk(); // Otomatis tutup kamera setelah sukses
+                }).catch(err => {
+                    Swal.fire('Error Kamera', 'Gagal mengakses kamera.', 'error');
+                    stopScannerProduk();
+                });
+            } else {
+                // Matikan Scanner
+                stopScannerProduk();
+            }
+        }
+
+        function stopScannerProduk() {
+            const readerDiv = document.getElementById('reader-produk');
+            const btn = document.getElementById('btn-scan-produk');
+            
+            if (html5QrCodeProduk && html5QrCodeProduk.isScanning) {
+                html5QrCodeProduk.stop().then(() => {
+                    resetScannerProdukUI(readerDiv, btn);
+                }).catch(err => {
+                    resetScannerProdukUI(readerDiv, btn);
+                });
+            } else {
+                resetScannerProdukUI(readerDiv, btn);
+            }
+        }
+
+        function resetScannerProdukUI(readerDiv, btn) {
+            if(readerDiv) readerDiv.classList.add('hidden');
+            if(btn) {
+                btn.classList.replace('bg-red-100', 'bg-blue-100');
+                btn.classList.replace('text-red-700', 'text-blue-700');
+                btn.classList.replace('border-red-200', 'border-blue-200');
+                btn.innerHTML = '<i class="fas fa-camera"></i>';
+            }
+        }
+
+        // --- MODULE: DASHBOARD & LAPORAN ---
+        function renderDashboard() {
+            if(currentUser.role !== 'Admin') return;
+            let hariIni = new Date().toLocaleDateString('id-ID'); // Format: DD/MM/YYYY
+            
+            // Filter trx hari ini (basic string check logic untuk simple app)
+            let trxHariIni = dataTransaksi.filter(t => t.Tanggal_Waktu.includes(new Date().getFullYear())); // Simplified for demo
+            
+            let totalPendapatan = trxHariIni.reduce((sum, t) => sum + parseInt(t.Total_Belanja), 0);
+            let totalLaba = trxHariIni.reduce((sum, t) => sum + parseInt(t.Laba_Kotor || 0), 0);
+
+            document.getElementById('dash-pendapatan').innerText = rp(totalPendapatan);
+            document.getElementById('dash-laba').innerText = rp(totalLaba);
+            document.getElementById('dash-transaksi').innerText = trxHariIni.length;
+        }
+
+        function renderLaporan() {
+            const tbody = document.getElementById('table-laporan-body');
+            tbody.innerHTML = '';
+            
+            // User Kasir hanya lihat transaksi dia sendiri
+            let listTrx = currentUser.role === 'Admin' ? dataTransaksi : dataTransaksi.filter(t => t.Kasir === currentUser.nama);
+
+            if(listTrx.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">Belum ada transaksi.</td></tr>`;
+                return;
+            }
+
+            listTrx.forEach(t => {
+                tbody.innerHTML += `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-3 font-mono text-blue-600">${t.ID_Transaksi}</td>
+                        <td class="p-3">${t.Tanggal_Waktu}</td>
+                        <td class="p-3">${t.Kasir}</td>
+                        <td class="p-3 text-right font-bold">${rp(t.Total_Belanja)}</td>
+                        <td class="p-3 text-right text-green-600 ${currentUser.role !== 'Admin' ? 'hide-element' : ''}">${rp(t.Laba_Kotor || 0)}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // --- MODULE: USER ---
+        function renderUsers() {
+            if(currentUser.role !== 'Admin') return;
+            const tbody = document.getElementById('table-user-body');
+            tbody.innerHTML = '';
+            dataUsers.forEach(u => {
+                tbody.innerHTML += `
+                    <tr class="border-b">
+                        <td class="p-3">${u.username}</td>
+                        <td class="p-3">${u.nama}</td>
+                        <td class="p-3"><span class="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">${u.role}</span></td>
+                        <td class="p-3 text-center">-</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function openModalUser() { document.getElementById('form-user').reset(); document.getElementById('modal-user').classList.remove('hide-element'); }
+        
+        function closeModal(id) { 
+            document.getElementById(id).classList.add('hide-element'); 
+            if (id === 'modal-produk') {
+                stopScannerProduk(); // Pastikan kamera form produk mati jika modal dibatalkan
+            }
+        }
+        
+        async function saveUser(e) {
+            e.preventDefault();
+            Swal.fire('Info', 'Fitur tambah user via form (Mockup). Gunakan backend GAS untuk kelola user.', 'info');
+            closeModal('modal-user');
+        }
+
+
+        // ==========================================
+        // KASIR / POS SYSTEM
+        // ==========================================
+        function initScannerEngine() {
+            if(!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+        }
+
+        function startScanner() {
+            initScannerEngine();
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
+            .then(() => {
+                document.getElementById('btn-start-scan').classList.add('hidden');
+                document.getElementById('btn-stop-scan').classList.remove('hidden');
+            }).catch(err => {
+                Swal.fire('Error Kamera', 'Tidak dapat mengakses kamera. ' + err, 'error');
+            });
+        }
+
+        function stopScanner() {
+            if(html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('btn-start-scan').classList.remove('hidden');
+                    document.getElementById('btn-stop-scan').classList.add('hidden');
+                });
+            }
+        }
+
+        // Triggered when QR/Barcode detected
+        let lastScanTime = 0;
+        function onScanSuccess(decodedText) {
+            // Debounce scan (prevent multiple reads in 1.5 seconds)
+            if(Date.now() - lastScanTime < 1500) return; 
+            lastScanTime = Date.now();
+            
+            playBeep();
+            tambahKeKeranjang(decodedText);
+        }
+
+        function handleManualBarcode(e) {
+            e.preventDefault();
+            const val = document.getElementById('manual-barcode').value;
+            if(val) {
+                tambahKeKeranjang(val);
+                document.getElementById('manual-barcode').value = '';
+                document.getElementById('manual-barcode').focus();
+            }
+        }
+
+        function tambahKeKeranjang(barcode) {
+            const produk = dataProduk.find(p => p.Barcode === barcode);
+            if(!produk) {
+                Swal.fire({icon: 'error', title: 'Tidak Ditemukan', text: `Barcode ${barcode} tidak ada di database!`, timer: 1500});
+                return;
+            }
+            if(produk.Stok <= 0) {
+                Swal.fire({icon: 'warning', title: 'Stok Habis', text: `Produk ${produk.Nama_Produk} stok kosong!`, timer: 1500});
+                return;
+            }
+
+            // Check if already in cart
+            const existItem = cart.find(item => item.Barcode === barcode);
+            if(existItem) {
+                if(existItem.Qty >= produk.Stok) {
+                    Swal.fire({icon: 'warning', title: 'Stok Terbatas', text: `Hanya tersedia ${produk.Stok} item!`, timer: 1000});
+                    return;
+                }
+                existItem.Qty++;
+                existItem.Subtotal = existItem.Qty * existItem.Harga_Jual;
+            } else {
+                cart.push({
+                    Barcode: produk.Barcode,
+                    Nama_Produk: produk.Nama_Produk,
+                    Harga_Jual: produk.Harga_Jual,
+                    Harga_Beli: produk.Harga_Beli, // Untuk hitung Laba
+                    Qty: 1,
+                    Subtotal: produk.Harga_Jual
+                });
+            }
+            renderCart();
+        }
+
+        function hapusDariKeranjang(index) {
+            cart.splice(index, 1);
+            renderCart();
+        }
+
+        function updateQtyCart(index, delta) {
+            const item = cart[index];
+            const produk = dataProduk.find(p => p.Barcode === item.Barcode);
+            
+            let newQty = item.Qty + delta;
+            if(newQty < 1) {
+                hapusDariKeranjang(index);
+                return;
+            }
+            if(newQty > produk.Stok) {
+                Swal.fire({icon: 'warning', title: 'Stok Terbatas', text: `Hanya tersedia ${produk.Stok} item!`, timer: 1000});
+                return;
+            }
+            item.Qty = newQty;
+            item.Subtotal = item.Qty * item.Harga_Jual;
+            renderCart();
+        }
+
+        function renderCart() {
+            const tbody = document.getElementById('cart-body');
+            tbody.innerHTML = '';
+            let total = 0;
+
+            if(cart.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-400 text-sm">Keranjang kosong. Mulai scan produk.</td></tr>`;
+                document.getElementById('cart-total').innerText = 'Rp 0';
+                document.getElementById('input-bayar').value = '';
+                document.getElementById('cart-kembalian').innerText = 'Rp 0';
+                return;
+            }
+
+            cart.forEach((item, index) => {
+                total += item.Subtotal;
+                tbody.innerHTML += `
+                    <tr class="border-b text-sm">
+                        <td class="py-3">
+                            <div class="font-semibold text-gray-800">${item.Nama_Produk}</div>
+                            <div class="text-xs text-gray-500">${item.Barcode} | ${rp(item.Harga_Jual)}</div>
+                        </td>
+                        <td class="py-3 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="updateQtyCart(${index}, -1)" class="w-6 h-6 bg-gray-200 rounded-full text-gray-600 hover:bg-red-500 hover:text-white transition">-</button>
+                                <span class="font-bold w-4">${item.Qty}</span>
+                                <button onclick="updateQtyCart(${index}, 1)" class="w-6 h-6 bg-gray-200 rounded-full text-gray-600 hover:bg-green-500 hover:text-white transition">+</button>
+                            </div>
+                        </td>
+                        <td class="py-3 text-right font-semibold text-gray-700">${rp(item.Subtotal)}</td>
+                        <td class="py-3 text-center">
+                            <button onclick="hapusDariKeranjang(${index})" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('cart-total').innerText = rp(total);
+            document.getElementById('cart-total').setAttribute('data-val', total);
+            kalkulasiKembalian();
+        }
+
+        function kalkulasiKembalian() {
+            if(cart.length === 0) return;
+            const total = parseInt(document.getElementById('cart-total').getAttribute('data-val'));
+            const bayar = parseInt(document.getElementById('input-bayar').value) || 0;
+            const kembali = bayar - total;
+            
+            const elKembali = document.getElementById('cart-kembalian');
+            if(kembali < 0) {
+                elKembali.innerText = "Kurang " + rp(Math.abs(kembali));
+                elKembali.classList.remove('text-green-600');
+                elKembali.classList.add('text-red-600');
+            } else {
+                elKembali.innerText = rp(kembali);
+                elKembali.classList.remove('text-red-600');
+                elKembali.classList.add('text-green-600');
+            }
+        }
+
+        async function prosesTransaksi() {
+            if(cart.length === 0) return Swal.fire('Kosong', 'Keranjang belanja masih kosong', 'warning');
+            
+            const total = parseInt(document.getElementById('cart-total').getAttribute('data-val'));
+            const bayar = parseInt(document.getElementById('input-bayar').value) || 0;
+            
+            if(bayar < total) return Swal.fire('Uang Kurang', 'Nominal pembayaran tidak mencukupi!', 'error');
+
+            const kembali = bayar - total;
+            
+            // Kalkulasi Laba Kotor (Total Harga Jual - Total Harga Beli)
+            let labaKotor = 0;
+            cart.forEach(item => {
+                labaKotor += (item.Harga_Jual - item.Harga_Beli) * item.Qty;
+            });
+
+            const payload = {
+                Kasir: currentUser.nama,
+                Total_Belanja: total,
+                Nominal_Bayar: bayar,
+                Kembalian: kembali,
+                Laba_Kotor: labaKotor,
+                Detail: cart // Array isi keranjang
+            };
+
+            try {
+                // Simpan ke DB
+                const res = await fetchAPI('processTransaction', payload);
+                const idTrx = IS_PREVIEW ? res.data : res.data.ID_Transaksi;
+                const tglTrx = IS_PREVIEW ? new Date().toLocaleString('id-ID') : res.data.Tanggal_Waktu;
+
+                // Cetak Struk
+                cetakStruk(idTrx, tglTrx, total, bayar, kembali);
+
+                // Reset App
+                cart = [];
+                renderCart();
+                loadDataAll(); // Refresh data stok dan laporan
+
+            } catch (err) {}
+        }
+
+        function cetakStruk(id, tgl, total, bayar, kembali) {
+            const printArea = document.getElementById('print-area');
+            
+            let htmlStruk = `
+                <div style="text-align: center; border-bottom: 1px dashed black; padding-bottom: 5px; margin-bottom: 5px;">
+                    <h3 style="margin: 0;">EDUPOS DIGITAL</h3>
+                    <p style="margin: 0; font-size: 10px;">Toko Pintar Berbasis Barcode</p>
+                </div>
+                <div style="font-size: 10px; margin-bottom: 5px;">
+                    <div>No  : ${id}</div>
+                    <div>Tgl : ${tgl}</div>
+                    <div>Ksr : ${currentUser.nama}</div>
+                </div>
+                <div style="border-bottom: 1px dashed black; margin-bottom: 5px;"></div>
+                <table style="width: 100%; font-size: 10px; border-collapse: collapse;">
+            `;
+
+            cart.forEach(item => {
+                htmlStruk += `
+                    <tr><td colspan="3">${item.Nama_Produk}</td></tr>
+                    <tr>
+                        <td>${item.Qty}x</td>
+                        <td>${item.Harga_Jual}</td>
+                        <td style="text-align: right;">${item.Subtotal}</td>
+                    </tr>
+                `;
+            });
+
+            htmlStruk += `
+                </table>
+                <div style="border-bottom: 1px dashed black; margin-top: 5px; margin-bottom: 5px;"></div>
+                <table style="width: 100%; font-size: 10px; font-weight: bold;">
+                    <tr><td>TOTAL</td><td style="text-align: right;">${total}</td></tr>
+                    <tr><td>BAYAR</td><td style="text-align: right;">${bayar}</td></tr>
+                    <tr><td>KEMBALI</td><td style="text-align: right;">${kembali}</td></tr>
+                </table>
+                <div style="text-align: center; margin-top: 10px; font-size: 10px;">
+                    Terima Kasih Atas Kunjungan Anda!
+                </div>
+            `;
+
+            printArea.innerHTML = htmlStruk;
+            
+            // Eksekusi Print Browser
+            window.print();
+        }
+
+        function playBeep() {
+            // Simple beep sound using AudioContext
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+                osc.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                osc.type = "sine";
+                osc.frequency.value = 800; // Hz
+                gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.1);
+            } catch (e) { console.log("Audio not supported"); }
+        }
+
+        // ==========================================
+        // PWA (PROGRESSIVE WEB APP) SETUP
+        // ==========================================
+        function setupPWA() {
+            // 1. Generate & Inject Manifest secara dinamis untuk Blogger (Single-file bypass)
+            const manifest = {
+                "name": "EduPOS Digital",
+                "short_name": "EduPOS",
+                "description": "Sistem Kasir & Kelola Stok Berbasis Barcode",
+                "start_url": window.location.href,
+                "display": "standalone",
+                "background_color": "#1e293b",
+                "theme_color": "#2563eb",
+                "icons": [
+                    { "src": "https://via.placeholder.com/192x192.png?text=EduPOS+Icon&bg=2563eb&textColor=fff", "sizes": "192x192", "type": "image/png" },
+                    { "src": "https://via.placeholder.com/512x512.png?text=EduPOS+Icon&bg=2563eb&textColor=fff", "sizes": "512x512", "type": "image/png" }
+                ]
+            };
+            
+            const stringManifest = JSON.stringify(manifest);
+            const blob = new Blob([stringManifest], {type: 'application/json'});
+            const manifestURL = URL.createObjectURL(blob);
+            document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+
+            // 2. Handle PWA Install Prompt
+            let deferredPrompt;
+            const installBtn = document.getElementById('btn-install-pwa');
+
+            window.addEventListener('beforeinstallprompt', (e) => {
+                // Mencegah browser menampilkan prompt default secara langsung
+                e.preventDefault();
+                // Simpan event sehingga dapat dipicu nanti
+                deferredPrompt = e;
+                // Tampilkan tombol instal di sidebar
+                if(installBtn) installBtn.classList.remove('hidden');
+            });
+
+            if(installBtn) {
+                installBtn.addEventListener('click', async () => {
+                    if (deferredPrompt) {
+                        // Tampilkan prompt instalasi PWA
+                        deferredPrompt.prompt();
+                        // Tunggu pengguna merespons prompt
+                        const { outcome } = await deferredPrompt.userChoice;
+                        if (outcome === 'accepted') {
+                            installBtn.classList.add('hidden'); // Sembunyikan setelah diinstal
+                        }
+                        deferredPrompt = null;
+                    }
+                });
+            }
+
+            window.addEventListener('appinstalled', () => {
+                if(installBtn) installBtn.classList.add('hidden');
+                console.log('PWA berhasil diinstal');
+            });
+        }
+
+        // Jalankan setup PWA saat halaman dimuat
+        setupPWA();
+    </script>
+</body>
+</html>
